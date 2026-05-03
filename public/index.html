@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html ng-app="cloudApp">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudStorage</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.3/angular.min.js"></script>
+  <script src="app.js"></script>
+</head>
+<body ng-controller="MainCtrl">
+
+  <div class="toast-container">
+    <div class="toast toast-{{ toast.type }}" ng-repeat="toast in toasts" ng-bind="toast.msg"></div>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="sidebar-toggle" ng-click="sidebarOpen = !sidebarOpen" title="Toggle sidebar">
+      <svg viewBox="0 0 18 14" fill="currentColor" width="18" height="14">
+        <rect y="0"  width="18" height="2" rx="1"/>
+        <rect y="6"  width="18" height="2" rx="1"/>
+        <rect y="12" width="18" height="2" rx="1"/>
+      </svg>
+    </button>
+    <div class="header-brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+          <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+        </svg>
+      </div>
+      <span class="brand-name">CloudStorage</span>
+    </div>
+    <div class="header-stats" ng-if="serverInfo">
+      <span class="stat-badge">{{ serverInfo.fileCount }} {{ serverInfo.fileCount === 1 ? 'file' : 'files' }}</span>
+      <span class="stat-badge">{{ serverInfo.totalSizeFormatted }} used</span>
+    </div>
+    <div class="header-right">
+      <div class="ip-info" ng-if="serverInfo && serverInfo.ips.length">
+        <span class="ip-label">Network:</span>
+        <span ng-repeat="ip in serverInfo.ips">
+          <code class="ip-addr">{{ ip }}:{{ serverInfo.port }}</code>{{ !$last ? ' ' : '' }}
+        </span>
+      </div>
+      <input class="search-input" type="text" ng-model="searchQuery" placeholder="Search files…">
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="app-layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" ng-class="{ open: sidebarOpen }">
+
+      <div class="sidebar-section">
+        <div class="sidebar-heading">
+          <span>Folders</span>
+          <button class="btn-ghost" ng-click="showFolderInput = !showFolderInput" title="New folder">+</button>
+        </div>
+
+        <div class="new-folder-wrap" ng-show="showFolderInput">
+          <input class="folder-input" type="text" ng-model="newFolderName"
+                 ng-keydown="folderKeydown($event)" placeholder="Folder name…" autofocus>
+          <button class="btn-ghost-sm" ng-click="createFolder()">Create</button>
+        </div>
+
+        <button class="folder-item" ng-class="{ active: currentFolder === null }" ng-click="navigateFolder(null)">
+          <span class="folder-icon">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+              <path d="M2 3a1 1 0 00-1 1v8a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1H8.5l-1-1.5A1 1 0 006.67 3H2z"/>
+            </svg>
+          </span>
+          All Files
+          <span class="folder-count">{{ files.length }}</span>
+        </button>
+
+        <button class="folder-item" ng-repeat="f in folders"
+                ng-class="{ active: currentFolder === f }" ng-click="navigateFolder(f)">
+          <span class="folder-icon">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+              <path d="M2 3a1 1 0 00-1 1v8a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1H8.5l-1-1.5A1 1 0 006.67 3H2z"/>
+            </svg>
+          </span>
+          {{ f }}
+          <span class="folder-count">{{ (files | filter: { folder: f }).length }}</span>
+        </button>
+
+        <div class="sidebar-empty" ng-if="folders.length === 0">No folders yet.<br>Click + to create one.</div>
+      </div>
+
+      <div class="sidebar-section" ng-if="allTags.length > 0">
+        <div class="sidebar-heading">
+          <span>Tags</span>
+          <button class="btn-ghost" ng-if="activeTags.length" ng-click="activeTags = []" title="Clear">✕</button>
+        </div>
+        <div class="tag-cloud">
+          <button class="tag-chip" ng-repeat="tag in allTags"
+                  ng-class="{ 'tag-active': isTagActive(tag) }"
+                  ng-style="{ 'border-color': tagColor(tag), 'color': isTagActive(tag) ? '#fff' : tagColor(tag), 'background': isTagActive(tag) ? tagColor(tag) : 'transparent' }"
+                  ng-click="toggleTagFilter(tag)">{{ tag }}</button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Main content -->
+    <main class="content">
+
+      <div class="upload-zone" drop-zone ng-class="{ 'is-dragging': isDragging }" ng-click="triggerFileInput()">
+        <div class="upload-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="36" height="36">
+            <polyline points="16 16 12 12 8 16"></polyline>
+            <line x1="12" y1="12" x2="12" y2="21"></line>
+            <path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"></path>
+          </svg>
+        </div>
+        <div class="upload-headline">Drop files here</div>
+        <div class="upload-sub">
+          or click to browse &nbsp;·&nbsp; up to 500 MB each
+          <span ng-if="currentFolder">&nbsp;·&nbsp; uploading into <strong>{{ currentFolder }}</strong></span>
+        </div>
+        <input id="fileInput" type="file" multiple file-input style="display:none">
+      </div>
+
+      <div class="progress-wrap" ng-if="uploading">
+        <div class="progress-track"><div class="progress-bar" ng-style="{ width: uploadProgress + '%' }"></div></div>
+        <span class="progress-label">Uploading… {{ uploadProgress | number:0 }}%</span>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="toolbar" ng-if="files.length > 0">
+        <div class="toolbar-left">
+          <span class="breadcrumb">
+            <button class="crumb" ng-click="navigateFolder(null)">All Files</button>
+            <span ng-if="currentFolder" class="crumb-sep">›</span>
+            <span ng-if="currentFolder" class="crumb crumb-active">{{ currentFolder }}</span>
+          </span>
+          <span class="active-tag-pill" ng-repeat="tag in activeTags"
+                ng-style="{ background: tagColor(tag) }" ng-click="toggleTagFilter(tag)">{{ tag }} ✕</span>
+        </div>
+        <div class="toolbar-right">
+          <span class="result-count">{{ filteredFiles().length }} files</span>
+          <select class="sort-select" ng-model="sortBy">
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="name-asc">Name A → Z</option>
+            <option value="name-desc">Name Z → A</option>
+            <option value="size-desc">Largest first</option>
+            <option value="size-asc">Smallest first</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Files grid -->
+      <div class="files-grid">
+        <div class="file-card" ng-repeat="file in filteredFiles() track by file.id" ng-click="openPreview(file)">
+          <div class="card-thumb" ng-class="'thumb-' + getFileCategory(file)">
+            <img ng-if="getFileCategory(file) === 'image'" ng-src="/api/files/{{ file.id }}/preview" class="thumb-img" alt="">
+            <span ng-if="getFileCategory(file) !== 'image'" class="thumb-icon" ng-bind="getFileIcon(file)"></span>
+          </div>
+          <div class="card-body">
+            <div class="card-name" title="{{ file.name }}" ng-bind="file.name"></div>
+            <div class="card-tags" ng-if="file.tags && file.tags.length">
+              <span class="card-tag" ng-repeat="tag in file.tags | limitTo:3" ng-style="{ background: tagColor(tag) }">{{ tag }}</span>
+              <span class="card-tag card-tag-more" ng-if="file.tags.length > 3">+{{ file.tags.length - 3 }}</span>
+            </div>
+            <div class="card-meta">
+              <span>{{ file.sizeFormatted }}</span>
+              <span>{{ file.uploadedAt | date:'MMM d' }}</span>
+            </div>
+          </div>
+          <div class="card-actions" ng-click="$event.stopPropagation()">
+            <button class="btn-icon btn-tag" title="Add tag" ng-click="openCardTagEdit(file, $event)">&#x2315;</button>
+            <button class="btn-icon" title="Download" ng-click="downloadFile(file)">&#8595;</button>
+            <button class="btn-icon btn-danger" title="Delete" ng-click="deleteFile(file)">&#x2715;</button>
+          </div>
+          <div class="card-tag-editor" ng-if="cardEdit.fileId === file.id" ng-click="$event.stopPropagation()">
+            <input id="ctag-{{ file.id }}" class="card-tag-input" type="text"
+                   ng-model="cardEdit.value" ng-keydown="cardTagKeydown($event, file)"
+                   placeholder="Tag name…" maxlength="30">
+            <button class="btn-add-tag-sm" ng-click="saveCardTag(file, $event)">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty-state" ng-if="files.length === 0 && !loading">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="64" height="64">
+            <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+          </svg>
+        </div>
+        <p class="empty-title">Your cloud is empty</p>
+        <p class="empty-sub">Upload some files to get started</p>
+      </div>
+
+      <div class="empty-state" ng-if="filteredFiles().length === 0 && files.length > 0">
+        <p class="empty-title">No files match the current filters</p>
+        <p class="empty-sub">Try a different search, folder, or tag</p>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Preview Modal -->
+  <div class="modal-overlay" ng-if="previewFile" ng-click="closePreview()">
+    <div class="modal" ng-click="$event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" ng-bind="previewFile.name"></div>
+        <div class="modal-header-actions">
+          <button class="btn btn-primary" ng-click="downloadFile(previewFile)">&#8595; Download</button>
+          <button class="btn-icon" ng-click="closePreview()">&#x2715;</button>
+        </div>
+      </div>
+
+      <div class="modal-body" ng-switch="previewType">
+        <div ng-switch-when="image"  class="preview-frame"><img ng-src="{{ trustedPreviewUrl }}" class="preview-image" alt=""></div>
+        <div ng-switch-when="video"  class="preview-frame"><video controls class="preview-video" ng-src="{{ trustedPreviewUrl }}"></video></div>
+        <div ng-switch-when="audio"  class="preview-frame preview-audio-wrap">
+          <div class="audio-visual"><span class="audio-icon">&#9835;</span><div class="audio-filename" ng-bind="previewFile.name"></div></div>
+          <audio controls class="preview-audio" ng-src="{{ trustedPreviewUrl }}"></audio>
+        </div>
+        <div ng-switch-when="pdf"    class="preview-frame"><iframe ng-src="{{ trustedPreviewUrl }}" class="preview-pdf" title="PDF preview"></iframe></div>
+        <div ng-switch-when="text"   class="preview-frame"><pre class="preview-text" ng-bind="previewTextContent"></pre></div>
+        <div ng-switch-default       class="preview-frame preview-unknown">
+          <div class="unknown-icon" ng-bind="getFileIcon(previewFile)"></div>
+          <div class="unknown-name" ng-bind="previewFile.name"></div>
+          <div class="unknown-size" ng-bind="previewFile.sizeFormatted"></div>
+          <p class="unknown-msg">No preview available for this file type.</p>
+          <button class="btn btn-primary" ng-click="downloadFile(previewFile)">&#8595; Download to open</button>
+        </div>
+      </div>
+
+      <div class="modal-details">
+        <div class="detail-row">
+          <span class="detail-label">Tags</span>
+          <div class="detail-value">
+            <span class="tag-removable" ng-repeat="tag in previewFile.tags"
+                  ng-style="{ background: tagColor(tag) }" ng-click="removeTagFromFile(previewFile, tag)">
+              {{ tag }} <span class="tag-remove">✕</span>
+            </span>
+            <input class="tag-input" type="text" ng-model="ui.newTag"
+                   ng-keydown="modalTagKeydown($event, previewFile)"
+                   placeholder="New tag…" maxlength="30">
+            <button class="btn-add-tag" ng-click="addTagFromModal(previewFile)">+ Add</button>
+          </div>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Folder</span>
+          <div class="detail-value">
+            <select class="folder-select" ng-model="previewFile.folder" ng-change="moveFileToFolder(previewFile)">
+              <option value="">No folder</option>
+              <option ng-repeat="f in folders" value="{{ f }}">{{ f }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="modal-meta">{{ previewFile.sizeFormatted }} &nbsp;·&nbsp; Uploaded {{ previewFile.uploadedAt | date:'MMM d, y · h:mm a' }}</span>
+        <button class="btn btn-danger-outline" ng-click="deleteFile(previewFile); closePreview()">Delete file</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat widget -->
+  <button class="chat-fab" ng-class="{ active: chatOpen }" ng-click="chatOpen = !chatOpen" title="AI Assistant">
+    <svg ng-if="!chatOpen" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+    </svg>
+    <span ng-if="chatOpen" style="font-size:18px">&#x2715;</span>
+  </button>
+
+  <div class="chat-panel" ng-class="{ open: chatOpen }">
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <span class="chat-header-icon">✦</span>
+        <div>
+          <div class="chat-header-title">AI Assistant</div>
+          <div class="chat-header-sub">Powered by Claude</div>
+        </div>
+      </div>
+      <button class="chat-close" ng-click="chatOpen = false">&#x2715;</button>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-welcome" ng-if="chatMsgs.length === 0">
+        <div class="chat-welcome-icon">✦</div>
+        Hi! I'm your AI assistant.<br>Ask me anything about your files or anything else.
+      </div>
+      <div class="chat-msg chat-msg-{{ msg.role }}" ng-repeat="msg in chatMsgs track by $index">
+        <div class="msg-bubble" ng-bind="msg.content"></div>
+      </div>
+      <div class="chat-msg chat-msg-assistant" ng-if="chatLoading">
+        <div class="chat-typing">
+          <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <textarea class="chat-textarea" ng-model="chatInput" ng-keydown="chatKeydown($event)"
+                placeholder="Ask anything… (Enter to send)" rows="1" ng-disabled="chatLoading"></textarea>
+      <button class="chat-send" ng-click="sendChat()" ng-disabled="chatLoading || !chatInput.trim()">Send</button>
+    </div>
+  </div>
+
+</body>
+</html>

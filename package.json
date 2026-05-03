@@ -1,0 +1,16 @@
+{
+  "name": "cloud-storage",
+  "version": "1.0.0",
+  "description": "Personal cloud storage — files live on this machine, accessible from any browser on your network",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^2.1.1",
+    "@anthropic-ai/sdk": "^0.55.0"
+  }
+}
