@@ -2,7 +2,7 @@
 
 A self-hosted file storage app. Run it on one machine and access it from any browser on your local network. Includes folders, tags, file preview, and an AI assistant powered by Claude.
 
-![Dark UI with sidebar, file grid, and chat widget](https://placeholder)
+![CloudStorage UI showing folders, file grid, and upload zone](docs/screenshot.png)
 
 ## Features
 

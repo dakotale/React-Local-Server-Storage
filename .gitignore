@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Runtime data — these are created automatically on first run
+uploads/
+metadata.json
+folders.json
+
+# Environment variables — copy .env.example and fill in your values
+.env
+
+# OS
+.DS_Store
+Thumbs.db
