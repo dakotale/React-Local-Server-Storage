@@ -155,7 +155,7 @@
       <div class="files-grid">
         <div class="file-card" ng-repeat="file in filteredFiles() track by file.id" ng-click="openPreview(file)">
           <div class="card-thumb" ng-class="'thumb-' + getFileCategory(file)">
-            <img ng-if="getFileCategory(file) === 'image'" ng-src="/api/files/{{ file.id }}/preview" class="thumb-img" alt="">
+            <img ng-if="getFileCategory(file) === 'image'" lazy-src="/api/files/{{ file.id }}/thumb" class="thumb-img" alt="">
             <span ng-if="getFileCategory(file) !== 'image'" class="thumb-icon" ng-bind="getFileIcon(file)"></span>
           </div>
           <div class="card-body">

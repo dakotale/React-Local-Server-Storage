@@ -8,6 +8,11 @@ const crypto    = require('crypto');
 const os        = require('os');
 const Anthropic = require('@anthropic-ai/sdk');
 
+// sharp is optional — thumbnails are generated when available, otherwise cards
+// fall back to serving the full image (which still works, just slower).
+let sharp;
+try { sharp = require('sharp'); } catch { sharp = null; }
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -80,18 +85,51 @@ app.get('/api/files', (req, res) => {
   res.json(files);
 });
 
-app.post('/api/upload', upload.array('files', 20), (req, res) => {
+app.post('/api/upload', upload.array('files', 20), async (req, res) => {
   if (!req.files?.length) return res.status(400).json({ error: 'No files received' });
   const meta     = readMeta();
-  const uploaded = req.files.map(f => {
+  const uploaded = await Promise.all(req.files.map(async f => {
     const id     = path.parse(f.filename).name;
     const folder = (req.body.folder || '').trim().slice(0, 60) || null;
     const info   = { name: f.originalname, size: f.size, sizeFormatted: formatSize(f.size), mimeType: f.mimetype, uploadedAt: new Date().toISOString(), storedName: f.filename, tags: [], folder };
+
+    // Generate a small JPEG thumbnail for images so the grid loads fast.
+    // Non-fatal — if sharp isn't installed or the image is unreadable the card
+    // falls back to /preview (the full file) automatically.
+    if (sharp && f.mimetype.startsWith('image/')) {
+      try {
+        await sharp(path.join(UPLOADS_DIR, f.filename))
+          .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toFile(path.join(UPLOADS_DIR, id + '_thumb.jpg'));
+        info.hasThumb = true;
+      } catch { /* leave hasThumb undefined */ }
+    }
+
     meta[id] = info;
     return { id, ...info };
-  });
+  }));
   writeMeta(meta);
   res.json({ success: true, files: uploaded });
+});
+
+// Serves a small thumbnail for image cards; falls back to the full file if no
+// thumbnail exists (e.g. uploaded before sharp was installed).
+app.get('/api/files/:id/thumb', (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const info = readMeta()[req.params.id];
+  if (!info) return res.status(404).json({ error: 'Not found' });
+  const thumbPath = path.join(UPLOADS_DIR, req.params.id + '_thumb.jpg');
+  if (fs.existsSync(thumbPath)) {
+    res.setHeader('Content-Type', 'image/jpeg');
+    return res.sendFile(thumbPath);
+  }
+  // Fallback: serve the full image inline
+  const fp = path.join(UPLOADS_DIR, info.storedName);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File missing' });
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Content-Type', info.mimeType || 'application/octet-stream');
+  res.sendFile(fp);
 });
 
 app.get('/api/files/:id/preview', (req, res) => {
@@ -136,6 +174,7 @@ app.delete('/api/files/:id', (req, res) => {
   const info = meta[req.params.id];
   if (!info) return res.status(404).json({ error: 'Not found' });
   try { fs.unlinkSync(path.join(UPLOADS_DIR, info.storedName)); } catch {}
+  try { fs.unlinkSync(path.join(UPLOADS_DIR, req.params.id + '_thumb.jpg')); } catch {}
   delete meta[req.params.id];
   writeMeta(meta);
   res.json({ success: true });

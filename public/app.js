@@ -359,3 +359,37 @@ app.directive('fileInput', function() {
     }
   };
 });
+
+// lazySrc directive — sets img[src] only when the element scrolls into view.
+// Usage: <img lazy-src="/api/files/{{ file.id }}/thumb">
+// The 100px rootMargin starts loading slightly before the image is visible,
+// so there's no flash of empty space as the user scrolls.
+app.directive('lazySrc', function() {
+  return {
+    restrict: 'A',
+    link: function(scope, element, attrs) {
+      var loaded     = false;
+      var pendingSrc = null;
+
+      // $observe resolves {{ }} interpolation in the attribute, then fires
+      // whenever the value changes. Store it and set src if already visible.
+      attrs.$observe('lazySrc', function(val) {
+        pendingSrc = val;
+        if (loaded && val) element[0].src = val;
+      });
+
+      var observer = new IntersectionObserver(function(entries) {
+        if (entries[0].isIntersecting) {
+          loaded = true;
+          if (pendingSrc) element[0].src = pendingSrc;
+          observer.disconnect();
+        }
+      }, { rootMargin: '100px' });
+
+      observer.observe(element[0]);
+
+      // Clean up if the card is removed from the DOM (e.g. filtered out).
+      scope.$on('$destroy', function() { observer.disconnect(); });
+    }
+  };
+});
