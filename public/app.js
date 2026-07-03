@@ -21,12 +21,14 @@ function($scope, $http, $sce, $timeout) {
   $scope.allTags     = [];
   $scope.activeTags  = [];
   $scope.searchQuery = '';
-  $scope.sortBy      = 'date-desc';
+  $scope.visibleFiles = [];
 
   // Wrapping transient inputs in an object prevents ng-if child-scope shadowing.
   // Without the dot, ng-model inside ng-if writes to the child scope and the
-  // parent controller never sees the typed value.
-  $scope.ui       = { newTag: '' };
+  // parent controller never sees the typed value. sortBy lives here (rather
+  // than as $scope.sortBy) because its <select> sits inside the ng-if="files.length > 0"
+  // toolbar — a bare ng-model there would silently shadow the real value.
+  $scope.ui       = { newTag: '', sortBy: 'date-desc' };
   $scope.cardEdit = { fileId: null, value: '' };
 
   $scope.previewFile        = null;
@@ -79,12 +81,14 @@ function($scope, $http, $sce, $timeout) {
       $scope.refreshTags();
       var i = $scope.activeTags.indexOf(tag);
       if (i > -1) $scope.activeTags.splice(i, 1);
+      $scope.recomputeVisibleFiles();
     });
   };
 
   $scope.toggleTagFilter = function(tag) {
     var i = $scope.activeTags.indexOf(tag);
     if (i > -1) $scope.activeTags.splice(i, 1); else $scope.activeTags.push(tag);
+    $scope.recomputeVisibleFiles();
   };
   $scope.isTagActive = function(tag) { return $scope.activeTags.indexOf(tag) !== -1; };
 
@@ -112,12 +116,16 @@ function($scope, $http, $sce, $timeout) {
   $scope.loadFolders = function() {
     $http.get('/api/folders').then(function(r) {
       $scope.folders = r.data;
-      if ($scope.currentFolder && $scope.folders.indexOf($scope.currentFolder) === -1)
+      if ($scope.currentFolder && $scope.folders.indexOf($scope.currentFolder) === -1) {
         $scope.currentFolder = null;
+        $scope.recomputeVisibleFiles();
+      }
     });
   };
 
-  $scope.navigateFolder = function(folder) { $scope.currentFolder = folder; $scope.activeTags = []; };
+  $scope.navigateFolder = function(folder) { $scope.currentFolder = folder; $scope.activeTags = []; $scope.recomputeVisibleFiles(); };
+
+  $scope.clearActiveTags = function() { $scope.activeTags = []; $scope.recomputeVisibleFiles(); };
 
   $scope.createFolder = function() {
     var name = ($scope.newFolderName || '').trim();
@@ -127,6 +135,7 @@ function($scope, $http, $sce, $timeout) {
       $scope.currentFolder   = name;
       $scope.newFolderName   = '';
       $scope.showFolderInput = false;
+      $scope.recomputeVisibleFiles();
     }, function() { $scope.showToast('Could not create folder', 'error'); });
   };
 
@@ -138,6 +147,7 @@ function($scope, $http, $sce, $timeout) {
   $scope.moveFileToFolder = function(file) {
     $http.patch('/api/files/' + file.id, { folder: file.folder || null }).then(function() {
       $scope.loadFolders();
+      $scope.recomputeVisibleFiles();
       $scope.showToast('Moved to ' + (file.folder || 'All Files'), 'info');
     }, function() { $scope.showToast('Move failed', 'error'); });
   };
@@ -151,13 +161,20 @@ function($scope, $http, $sce, $timeout) {
     $scope.loading = true;
     $http.get('/api/files').then(function(r) {
       $scope.files = r.data; $scope.loading = false; $scope.refreshTags();
+      $scope.recomputeVisibleFiles();
     }, function() {
       $scope.loading = false;
       $scope.showToast('Could not load files — is the server running?', 'error');
     });
   };
 
-  $scope.filteredFiles = function() {
+  // Recomputed explicitly (rather than as a function called from the template)
+  // because ng-repeat/interpolation expressions run on every digest cycle —
+  // with a function that re-filters and re-sorts the whole file list, that
+  // meant a full O(n log n) pass on nearly every click, keypress or timer.
+  // Instead we cache the result in $scope.visibleFiles and only recompute it
+  // where files/currentFolder/searchQuery/activeTags/sortBy actually change.
+  $scope.recomputeVisibleFiles = function() {
     var r = $scope.files;
     if ($scope.currentFolder !== null)
       r = r.filter(function(f) { return f.folder === $scope.currentFolder; });
@@ -173,7 +190,7 @@ function($scope, $http, $sce, $timeout) {
         return $scope.activeTags.every(function(tag) { return (f.tags || []).indexOf(tag) !== -1; });
       });
     r = r.slice();
-    switch ($scope.sortBy) {
+    switch ($scope.ui.sortBy) {
       case 'name-asc':  r.sort(function(a,b){ return a.name.localeCompare(b.name); }); break;
       case 'name-desc': r.sort(function(a,b){ return b.name.localeCompare(a.name); }); break;
       case 'size-desc': r.sort(function(a,b){ return b.size - a.size; }); break;
@@ -181,7 +198,7 @@ function($scope, $http, $sce, $timeout) {
       case 'date-asc':  r.sort(function(a,b){ return new Date(a.uploadedAt) - new Date(b.uploadedAt); }); break;
       default:          r.sort(function(a,b){ return new Date(b.uploadedAt) - new Date(a.uploadedAt); });
     }
-    return r;
+    $scope.visibleFiles = r;
   };
 
   $scope.uploadFiles = function(fileList) {
@@ -203,7 +220,7 @@ function($scope, $http, $sce, $timeout) {
     }).then(function(r) {
       $scope.uploading = false; $scope.uploadProgress = 0;
       r.data.files.forEach(function(f) { $scope.files.unshift(f); });
-      $scope.refreshTags(); $scope.loadServerInfo();
+      $scope.refreshTags(); $scope.loadServerInfo(); $scope.recomputeVisibleFiles();
       var n = r.data.files.length;
       $scope.showToast(n + ' file' + (n > 1 ? 's' : '') + ' uploaded', 'success');
     }, function(err) {
@@ -224,7 +241,7 @@ function($scope, $http, $sce, $timeout) {
     if (!confirm('Delete "' + file.name + '"? This cannot be undone.')) return;
     $http.delete('/api/files/' + file.id).then(function() {
       $scope.files.splice($scope.files.indexOf(file), 1);
-      $scope.refreshTags(); $scope.loadFolders(); $scope.loadServerInfo();
+      $scope.refreshTags(); $scope.loadFolders(); $scope.loadServerInfo(); $scope.recomputeVisibleFiles();
       $scope.showToast('"' + file.name + '" deleted', 'info');
     }, function() { $scope.showToast('Delete failed', 'error'); });
   };
@@ -331,6 +348,11 @@ function($scope, $http, $sce, $timeout) {
   $scope.loadServerInfo();
   $scope.loadFolders();
   $scope.loadFiles();
+
+  // Search box has no natural "change" event of its own — wire it in directly
+  // rather than watching $scope.searchQuery every digest.
+  $scope.onSearchChange = $scope.recomputeVisibleFiles;
+  $scope.onSortChange   = $scope.recomputeVisibleFiles;
 
 }]);
 

@@ -42,7 +42,7 @@
           <code class="ip-addr">{{ ip }}:{{ serverInfo.port }}</code>{{ !$last ? ' ' : '' }}
         </span>
       </div>
-      <input class="search-input" type="text" ng-model="searchQuery" placeholder="Search files…">
+      <input class="search-input" type="text" ng-model="searchQuery" ng-change="onSearchChange()" placeholder="Search files…">
     </div>
   </header>
 
@@ -91,7 +91,7 @@
       <div class="sidebar-section" ng-if="allTags.length > 0">
         <div class="sidebar-heading">
           <span>Tags</span>
-          <button class="btn-ghost" ng-if="activeTags.length" ng-click="activeTags = []" title="Clear">✕</button>
+          <button class="btn-ghost" ng-if="activeTags.length" ng-click="clearActiveTags()" title="Clear">✕</button>
         </div>
         <div class="tag-cloud">
           <button class="tag-chip" ng-repeat="tag in allTags"
@@ -139,8 +139,8 @@
                 ng-style="{ background: tagColor(tag) }" ng-click="toggleTagFilter(tag)">{{ tag }} ✕</span>
         </div>
         <div class="toolbar-right">
-          <span class="result-count">{{ filteredFiles().length }} files</span>
-          <select class="sort-select" ng-model="sortBy">
+          <span class="result-count">{{ visibleFiles.length }} files</span>
+          <select class="sort-select" ng-model="ui.sortBy" ng-change="onSortChange()">
             <option value="date-desc">Newest first</option>
             <option value="date-asc">Oldest first</option>
             <option value="name-asc">Name A → Z</option>
@@ -153,7 +153,7 @@
 
       <!-- Files grid -->
       <div class="files-grid">
-        <div class="file-card" ng-repeat="file in filteredFiles() track by file.id" ng-click="openPreview(file)">
+        <div class="file-card" ng-repeat="file in visibleFiles track by file.id" ng-click="openPreview(file)">
           <div class="card-thumb" ng-class="'thumb-' + getFileCategory(file)">
             <img ng-if="getFileCategory(file) === 'image'" lazy-src="/api/files/{{ file.id }}/thumb" class="thumb-img" alt="">
             <span ng-if="getFileCategory(file) !== 'image'" class="thumb-icon" ng-bind="getFileIcon(file)"></span>
@@ -193,7 +193,7 @@
         <p class="empty-sub">Upload some files to get started</p>
       </div>
 
-      <div class="empty-state" ng-if="filteredFiles().length === 0 && files.length > 0">
+      <div class="empty-state" ng-if="visibleFiles.length === 0 && files.length > 0">
         <p class="empty-title">No files match the current filters</p>
         <p class="empty-sub">Try a different search, folder, or tag</p>
       </div>

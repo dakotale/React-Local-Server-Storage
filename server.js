@@ -26,10 +26,27 @@ if (!fs.existsSync(META_PATH))    fs.writeFileSync(META_PATH,    '{}');
 if (!fs.existsSync(FOLDERS_PATH)) fs.writeFileSync(FOLDERS_PATH, '[]');
 
 // ── JSON store helpers ────────────────────────────────────────────────────────
-const readMeta     = () => { try { return JSON.parse(fs.readFileSync(META_PATH,    'utf8')); } catch { return {}; } };
-const writeMeta    = d  => fs.writeFileSync(META_PATH, JSON.stringify(d, null, 2));
-const readFolders  = () => { try { return JSON.parse(fs.readFileSync(FOLDERS_PATH, 'utf8')); } catch { return []; } };
-const writeFolders = l  => fs.writeFileSync(FOLDERS_PATH, JSON.stringify(l));
+// Cached in memory after first read — every route was previously doing a
+// synchronous full-file read on every request (including plain GETs), which
+// blocks Node's single event loop and gets slower as metadata.json grows.
+// Writes still go straight to disk, so the file on disk stays authoritative.
+let metaCache = null;
+const readMeta = () => {
+  if (metaCache === null) {
+    try { metaCache = JSON.parse(fs.readFileSync(META_PATH, 'utf8')); } catch { metaCache = {}; }
+  }
+  return metaCache;
+};
+const writeMeta = d => { metaCache = d; fs.writeFileSync(META_PATH, JSON.stringify(d, null, 2)); };
+
+let foldersCache = null;
+const readFolders = () => {
+  if (foldersCache === null) {
+    try { foldersCache = JSON.parse(fs.readFileSync(FOLDERS_PATH, 'utf8')); } catch { foldersCache = []; }
+  }
+  return foldersCache;
+};
+const writeFolders = l => { foldersCache = l; fs.writeFileSync(FOLDERS_PATH, JSON.stringify(l)); };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function formatSize(bytes) {
