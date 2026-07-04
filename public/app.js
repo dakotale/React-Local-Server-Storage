@@ -212,9 +212,16 @@ function($scope, $http, $sce, $timeout) {
     $http.post('/api/upload', fd, {
       headers: { 'Content-Type': undefined },
       uploadEventHandlers: {
+        // $applyAsync (not $apply) — progress fires many times in quick
+        // succession for larger/multi-file uploads, often while a digest
+        // from the previous tick is still running. $apply would throw
+        // $rootScope:inprog in that case; the scope value still gets set,
+        // but the digest that would flush it to the progress-bar width
+        // binding aborts, so the bar visually never leaves 0%. $applyAsync
+        // coalesces rapid calls into the next digest instead of throwing.
         progress: function(e) {
           if (e.lengthComputable)
-            $scope.$apply(function() { $scope.uploadProgress = Math.round((e.loaded / e.total) * 100); });
+            $scope.$applyAsync(function() { $scope.uploadProgress = Math.round((e.loaded / e.total) * 100); });
         }
       }
     }).then(function(r) {
