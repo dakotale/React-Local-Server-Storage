@@ -1,5 +1,43 @@
 var app = angular.module('cloudApp', []);
 
+// ── Accent color math ──────────────────────────────────────────────────────
+// Everything themeable derives from a single hex value: --accent-hover is a
+// darkened mix, --accent-light a whitened mix (for text on dark chips), and
+// --accent-rgb/--accent-dim feed the rgba() based borders/shadows in CSS.
+var ACCENT_STORAGE_KEY = 'cloudstorage-accent';
+var DEFAULT_ACCENT     = '#8b5cf6';
+
+function hexToRgb(hex) {
+  hex = (hex || '').replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(function(c) { return c + c; }).join('');
+  var num = parseInt(hex, 16);
+  if (isNaN(num)) return { r: 139, g: 92, b: 246 };
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function toHex(v) {
+  v = Math.max(0, Math.min(255, Math.round(v)));
+  var s = v.toString(16);
+  return s.length === 1 ? '0' + s : s;
+}
+
+function mixHex(rgb, target, amount) {
+  return '#' +
+    toHex(rgb.r + (target.r - rgb.r) * amount) +
+    toHex(rgb.g + (target.g - rgb.g) * amount) +
+    toHex(rgb.b + (target.b - rgb.b) * amount);
+}
+
+function applyAccent(hex) {
+  var rgb   = hexToRgb(hex);
+  var root  = document.documentElement.style;
+  root.setProperty('--accent',       hex);
+  root.setProperty('--accent-hover', mixHex(rgb, { r: 0,   g: 0,   b: 0   }, 0.18));
+  root.setProperty('--accent-light', mixHex(rgb, { r: 255, g: 255, b: 255 }, 0.45));
+  root.setProperty('--accent-rgb',   rgb.r + ',' + rgb.g + ',' + rgb.b);
+  root.setProperty('--accent-dim',   'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',.15)');
+}
+
 app.controller('MainCtrl', ['$scope', '$http', '$sce', '$timeout',
 function($scope, $http, $sce, $timeout) {
 
@@ -17,6 +55,29 @@ function($scope, $http, $sce, $timeout) {
   $scope.folders         = [];
   $scope.showFolderInput = false;
   $scope.newFolderName   = '';
+
+  // ── Theme (accent color) ─────────────────────────────────────────────────
+  $scope.accentPresets = [
+    { name: 'Violet', hex: '#8b5cf6' },
+    { name: 'Blue',   hex: '#3b82f6' },
+    { name: 'Teal',   hex: '#14b8a6' },
+    { name: 'Pink',   hex: '#ec4899' },
+    { name: 'Amber',  hex: '#f59e0b' },
+    { name: 'Indigo', hex: '#6366f1' }
+  ];
+  $scope.theme = { open: false, accent: localStorage.getItem(ACCENT_STORAGE_KEY) || DEFAULT_ACCENT };
+  applyAccent($scope.theme.accent);
+
+  $scope.setAccent = function(hex) {
+    $scope.theme.accent = hex;
+    applyAccent(hex);
+    localStorage.setItem(ACCENT_STORAGE_KEY, hex);
+  };
+  $scope.resetAccent      = function() { $scope.setAccent(DEFAULT_ACCENT); };
+  $scope.toggleThemePanel = function($event) {
+    if ($event) $event.stopPropagation();
+    $scope.theme.open = !$scope.theme.open;
+  };
 
   $scope.allTags     = [];
   $scope.activeTags  = [];
@@ -349,6 +410,16 @@ function($scope, $http, $sce, $timeout) {
   angular.element(document).on('keydown', function(e) {
     if (e.key === 'Escape' && $scope.previewFile)
       $scope.$apply(function() { $scope.closePreview(); });
+  });
+
+  // Close the theme panel on any click outside it. toggleThemePanel() and the
+  // panel itself both stopPropagation(), so this only fires for genuine
+  // outside clicks. $applyAsync (not $apply) — this fires during the bubble
+  // phase of clicks that ng-click has already wrapped in its own $apply, so
+  // $apply here would throw $rootScope:inprog (same issue as the upload
+  // progress handler).
+  angular.element(document).on('click', function() {
+    if ($scope.theme.open) $scope.$applyAsync(function() { $scope.theme.open = false; });
   });
 
   // ── Init ──────────────────────────────────────────────────────────────────

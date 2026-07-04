@@ -16,6 +16,7 @@
   --accent-hover:  #7c3aed;
   --accent-dim:    rgba(139,92,246,.15);
   --accent-light:  #c4b5fd;   /* light accent tint for badges/pills on dark bg */
+  --accent-rgb:    139,92,246; /* raw components so rgba(var(--accent-rgb),X) can pick a custom alpha */
 
   /* ── Text colors — neutral grays for max contrast against the neutral bg ── */
   --text:          #f5f5f7;   /* near-white, neutral */
@@ -92,7 +93,7 @@ body {
   padding: 3px 10px;
   background: var(--accent-dim);
   color: var(--accent-light);
-  border: 1px solid rgba(139,92,246,.3);
+  border: 1px solid rgba(var(--accent-rgb),.3);
   border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
@@ -131,6 +132,90 @@ body {
 }
 .search-input::placeholder { color: var(--text-muted); }
 .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* ── Theme (accent color) menu ──────────────────────────────────────────── */
+.theme-menu { position: relative; flex-shrink: 0; }
+
+.theme-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: color var(--transition), background var(--transition);
+}
+.theme-toggle:hover { color: var(--text); background: var(--bg-input); }
+
+.theme-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 300;
+  width: 210px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  animation: slideDown .12s ease;
+}
+
+.theme-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.swatch-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--transition), border-color var(--transition);
+}
+.swatch:hover  { transform: scale(1.1); }
+.swatch.active { border-color: var(--text); }
+
+.custom-accent-row { display: flex; align-items: center; gap: 8px; }
+
+.color-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 30px;
+  height: 26px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.color-input::-webkit-color-swatch        { border: none; border-radius: 4px; }
+
+.custom-accent-label { font-size: 12px; color: var(--text-secondary); flex: 1; }
+
+.theme-reset-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  flex-shrink: 0;
+}
+.theme-reset-btn:hover { color: var(--text); }
 
 /* ── App layout ──────────────────────────────────────────────────────────── */
 .app-layout {
@@ -187,7 +272,7 @@ body {
 
 .btn-ghost-sm {
   background: var(--accent-dim);
-  border: 1px solid rgba(139,92,246,.3);
+  border: 1px solid rgba(var(--accent-rgb),.3);
   color: var(--accent-light);
   border-radius: 5px;
   padding: 3px 9px;
@@ -247,7 +332,7 @@ body {
   color: var(--text-muted);
   flex-shrink: 0;
 }
-.folder-item.active .folder-count { background: rgba(139,92,246,.2); color: var(--accent-light); }
+.folder-item.active .folder-count { background: rgba(var(--accent-rgb),.2); color: var(--accent-light); }
 
 .sidebar-empty {
   font-size: 12px;
@@ -614,7 +699,7 @@ body {
 /* ── Modal tag Add button ────────────────────────────────────────────────── */
 .btn-add-tag {
   background: var(--accent-dim);
-  border: 1px solid rgba(139,92,246,.4);
+  border: 1px solid rgba(var(--accent-rgb),.4);
   color: var(--accent-light);
   border-radius: 20px;
   padding: 3px 12px;
@@ -701,13 +786,13 @@ body {
   color: #fff;
   font-size: 22px;
   cursor: pointer;
-  box-shadow: 0 4px 20px rgba(139,92,246,.5);
+  box-shadow: 0 4px 20px rgba(var(--accent-rgb),.5);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
 }
-.chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 26px rgba(139,92,246,.7); background: var(--accent-hover); }
+.chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 26px rgba(var(--accent-rgb),.7); background: var(--accent-hover); }
 .chat-fab.active { background: var(--bg-card); box-shadow: var(--shadow); }
 
 .chat-panel {
