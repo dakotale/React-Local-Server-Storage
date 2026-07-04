@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CloudStorage</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.min.css">
   <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.3/angular.min.js"></script>
   <script src="app.js"></script>
 </head>
@@ -43,6 +43,14 @@
         </span>
       </div>
       <input class="search-input" type="text" ng-model="searchQuery" ng-change="onSearchChange()" placeholder="Search files…">
+
+      <button class="theme-toggle" ng-click="openStorageModal()" title="Storage usage">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" width="16" height="16">
+          <ellipse cx="10" cy="5" rx="7" ry="2.6"/>
+          <path d="M3 5v10c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5"/>
+          <path d="M3 10c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/>
+        </svg>
+      </button>
 
       <div class="theme-menu">
         <button class="theme-toggle" ng-click="toggleThemePanel($event)" title="Accent color">
@@ -87,7 +95,8 @@
 
         <div class="new-folder-wrap" ng-show="showFolderInput">
           <input class="folder-input" type="text" ng-model="newFolderName"
-                 ng-keydown="folderKeydown($event)" placeholder="Folder name…" autofocus>
+                 ng-keydown="folderKeydown($event)"
+                 placeholder="{{ currentFolder ? 'Subfolder of ' + currentFolder + '…' : 'Folder name…' }}" autofocus>
           <button class="btn-ghost-sm" ng-click="createFolder()">Create</button>
         </div>
 
@@ -101,15 +110,16 @@
           <span class="folder-count">{{ files.length }}</span>
         </button>
 
-        <button class="folder-item" ng-repeat="f in folders"
-                ng-class="{ active: currentFolder === f }" ng-click="navigateFolder(f)">
+        <button class="folder-item" ng-repeat="row in folderRows" ng-style="{ 'padding-left': (9 + row.depth * 14) + 'px' }"
+                ng-class="{ active: currentFolder === row.path }" ng-click="navigateFolder(row.path)">
           <span class="folder-icon">
             <svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
               <path d="M2 3a1 1 0 00-1 1v8a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1H8.5l-1-1.5A1 1 0 006.67 3H2z"/>
             </svg>
           </span>
-          {{ f }}
-          <span class="folder-count">{{ (files | filter: { folder: f }).length }}</span>
+          {{ row.name }}
+          <span class="folder-count">{{ (files | filter: { folder: row.path }).length }}</span>
+          <span class="folder-delete-btn" ng-click="deleteFolder(row.path, $event)" title="Delete folder">&#x2715;</span>
         </button>
 
         <div class="sidebar-empty" ng-if="folders.length === 0">No folders yet.<br>Click + to create one.</div>
@@ -143,8 +153,14 @@
         </div>
         <div class="upload-headline">Drop files here</div>
         <div class="upload-sub">
-          or click to browse &nbsp;·&nbsp; up to 500 MB each
+          or click to browse &nbsp;·&nbsp; up to 500 MB each &nbsp;·&nbsp; paste to upload from clipboard
           <span ng-if="currentFolder">&nbsp;·&nbsp; uploading into <strong>{{ currentFolder }}</strong></span>
+        </div>
+        <button class="url-upload-toggle" ng-click="toggleUrlInput($event)">or upload from a URL</button>
+        <div class="url-upload-row" ng-if="urlUpload.open" ng-click="$event.stopPropagation()">
+          <input type="text" class="url-upload-input" ng-model="urlUpload.url"
+                 ng-keydown="urlUploadKeydown($event)" placeholder="https://example.com/file.jpg">
+          <button class="btn-ghost-sm" ng-click="uploadFromUrl()" ng-disabled="urlUpload.loading">{{ urlUpload.loading ? 'Fetching…' : 'Fetch' }}</button>
         </div>
         <input id="fileInput" type="file" multiple file-input style="display:none">
       </div>
@@ -154,13 +170,33 @@
         <span class="progress-label">Uploading… {{ uploadProgress | number:0 }}%</span>
       </div>
 
+      <!-- Bulk selection bar -->
+      <div class="bulk-bar" ng-if="selectionCount() > 0">
+        <span class="bulk-count">{{ selectionCount() }} selected</span>
+        <div class="bulk-actions">
+          <input type="text" class="bulk-tag-input" ng-model="bulk.tag"
+                 ng-keydown="bulkTagKeydown($event)" placeholder="Add tag…" maxlength="30">
+          <button class="btn-ghost-sm" ng-click="applyBulkTag()">Tag</button>
+          <select class="bulk-folder-select" ng-model="bulk.folder">
+            <option value="">No folder</option>
+            <option ng-repeat="row in folderRows" value="{{ row.path }}">{{ folderIndent(row.depth) }}{{ row.name }}</option>
+          </select>
+          <button class="btn-ghost-sm" ng-click="applyBulkFolder()">Move</button>
+          <button class="btn-icon" title="Download as zip" ng-click="bulkDownload()">&#8595; Zip</button>
+          <button class="btn-icon btn-danger" title="Delete selected" ng-click="bulkDelete()">&#x2715; Delete</button>
+        </div>
+        <button class="btn-ghost bulk-clear" ng-click="clearSelection()" title="Clear selection">Clear</button>
+      </div>
+
       <!-- Toolbar -->
       <div class="toolbar" ng-if="files.length > 0">
         <div class="toolbar-left">
           <span class="breadcrumb">
             <button class="crumb" ng-click="navigateFolder(null)">All Files</button>
-            <span ng-if="currentFolder" class="crumb-sep">›</span>
-            <span ng-if="currentFolder" class="crumb crumb-active">{{ currentFolder }}</span>
+            <span ng-repeat="seg in breadcrumb track by seg.path">
+              <span class="crumb-sep">›</span>
+              <button class="crumb" ng-class="{ 'crumb-active': $last }" ng-click="navigateFolder(seg.path)">{{ seg.name }}</button>
+            </span>
           </span>
           <span class="active-tag-pill" ng-repeat="tag in activeTags"
                 ng-style="{ background: tagColor(tag) }" ng-click="toggleTagFilter(tag)">{{ tag }} ✕</span>
@@ -179,8 +215,11 @@
       </div>
 
       <!-- Files grid -->
-      <div class="files-grid">
-        <div class="file-card" ng-repeat="file in visibleFiles track by file.id" ng-click="openPreview(file)">
+      <div class="files-grid" ng-class="{ 'selection-active': selectionCount() > 0 }">
+        <div class="file-card" ng-class="{ selected: isSelected(file) }" ng-repeat="file in visibleFiles track by file.id" ng-click="onCardClick(file, $event)">
+          <div class="card-select-wrap" ng-click="$event.stopPropagation()">
+            <input type="checkbox" class="card-select" ng-checked="isSelected(file)" ng-click="toggleSelect(file, $event)">
+          </div>
           <div class="card-thumb" ng-class="'thumb-' + getFileCategory(file)">
             <img ng-if="getFileCategory(file) === 'image'" lazy-src="/api/files/{{ file.id }}/thumb" class="thumb-img" alt="">
             <span ng-if="getFileCategory(file) !== 'image'" class="thumb-icon" ng-bind="getFileIcon(file)"></span>
@@ -232,7 +271,16 @@
   <div class="modal-overlay" ng-if="previewFile" ng-click="closePreview()">
     <div class="modal" ng-click="$event.stopPropagation()">
       <div class="modal-header">
-        <div class="modal-title" ng-bind="previewFile.name"></div>
+        <div class="modal-title-wrap" ng-if="!rename.active">
+          <div class="modal-title" ng-bind="previewFile.name"></div>
+          <button class="btn-icon rename-btn" title="Rename" ng-click="startRename(previewFile, $event)">&#9998;</button>
+        </div>
+        <div class="modal-title-wrap" ng-if="rename.active">
+          <input id="rename-input" class="rename-input" type="text" ng-model="rename.value"
+                 ng-keydown="renameKeydown($event, previewFile)" maxlength="255">
+          <button class="btn-icon" title="Save" ng-click="saveRename(previewFile)">&#10003;</button>
+          <button class="btn-icon" title="Cancel" ng-click="cancelRename()">&#x2715;</button>
+        </div>
         <div class="modal-header-actions">
           <button class="btn btn-primary" ng-click="downloadFile(previewFile)">&#8595; Download</button>
           <button class="btn-icon" ng-click="closePreview()">&#x2715;</button>
@@ -276,7 +324,7 @@
           <div class="detail-value">
             <select class="folder-select" ng-model="previewFile.folder" ng-change="moveFileToFolder(previewFile)">
               <option value="">No folder</option>
-              <option ng-repeat="f in folders" value="{{ f }}">{{ f }}</option>
+              <option ng-repeat="row in folderRows" value="{{ row.path }}">{{ folderIndent(row.depth) }}{{ row.name }}</option>
             </select>
           </div>
         </div>
@@ -285,6 +333,47 @@
       <div class="modal-footer">
         <span class="modal-meta">{{ previewFile.sizeFormatted }} &nbsp;·&nbsp; Uploaded {{ previewFile.uploadedAt | date:'MMM d, y · h:mm a' }}</span>
         <button class="btn btn-danger-outline" ng-click="deleteFile(previewFile); closePreview()">Delete file</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Storage dashboard modal -->
+  <div class="modal-overlay" ng-if="storageOpen" ng-click="closeStorageModal()">
+    <div class="modal storage-modal" ng-click="$event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">Storage</div>
+        <div class="modal-header-actions">
+          <button class="btn-icon" ng-click="closeStorageModal()">&#x2715;</button>
+        </div>
+      </div>
+      <div class="modal-body storage-body" ng-if="storageInfo">
+        <div class="storage-summary">
+          <div class="storage-gauge-track" ng-if="storageInfo.disk">
+            <div class="storage-gauge-fill" ng-style="{ width: storageUsedPct() + '%' }"></div>
+          </div>
+          <div class="storage-summary-text">
+            {{ storageInfo.totalSizeFormatted }} used by {{ storageInfo.fileCount }} file{{ storageInfo.fileCount === 1 ? '' : 's' }}
+            <span ng-if="storageInfo.disk">&nbsp;·&nbsp; {{ storageInfo.disk.freeFormatted }} free on disk</span>
+          </div>
+        </div>
+
+        <div class="storage-section" ng-if="storageInfo.byCategory.length">
+          <div class="storage-section-title">By type</div>
+          <div class="storage-row" ng-repeat="row in storageInfo.byCategory">
+            <span class="storage-row-label">{{ row.category }}</span>
+            <div class="storage-row-bar-track"><div class="storage-row-bar-fill" ng-style="{ width: storagePct(row.size) + '%', background: categoryColor(row.category) }"></div></div>
+            <span class="storage-row-size">{{ row.sizeFormatted }}</span>
+          </div>
+        </div>
+
+        <div class="storage-section" ng-if="storageInfo.byFolder.length">
+          <div class="storage-section-title">By folder</div>
+          <div class="storage-row" ng-repeat="row in storageInfo.byFolder">
+            <span class="storage-row-label" title="{{ row.folder }}">{{ row.folder }}</span>
+            <div class="storage-row-bar-track"><div class="storage-row-bar-fill" ng-style="{ width: storagePct(row.size) + '%' }"></div></div>
+            <span class="storage-row-size">{{ row.sizeFormatted }}</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>

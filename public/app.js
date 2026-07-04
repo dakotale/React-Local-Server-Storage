@@ -38,6 +38,36 @@ function applyAccent(hex) {
   root.setProperty('--accent-dim',   'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',.15)');
 }
 
+// ── Nested folder tree ──────────────────────────────────────────────────────
+// Folders are stored server-side as flat "/"-joined path strings (e.g.
+// "Work/Invoices") — no real hierarchy on disk, just a label. This turns
+// that flat list into an ordered, indented row list the sidebar and folder
+// <select>s can render directly, without needing recursive templates.
+function buildFolderRows(paths) {
+  var root = { children: {}, order: [] };
+  paths.forEach(function(p) {
+    var node = root;
+    var acc  = '';
+    p.split('/').forEach(function(part) {
+      acc = acc ? acc + '/' + part : part;
+      if (!node.children[part]) {
+        node.children[part] = { name: part, path: acc, children: {}, order: [] };
+        node.order.push(part);
+      }
+      node = node.children[part];
+    });
+  });
+  var rows = [];
+  (function flatten(node, depth) {
+    node.order.forEach(function(key) {
+      var child = node.children[key];
+      rows.push({ name: child.name, path: child.path, depth: depth });
+      flatten(child, depth + 1);
+    });
+  })(root, 0);
+  return rows;
+}
+
 app.controller('MainCtrl', ['$scope', '$http', '$sce', '$timeout',
 function($scope, $http, $sce, $timeout) {
 
@@ -55,6 +85,98 @@ function($scope, $http, $sce, $timeout) {
   $scope.folders         = [];
   $scope.showFolderInput = false;
   $scope.newFolderName   = '';
+
+  // ── Bulk selection ───────────────────────────────────────────────────────
+  $scope.selectedIds     = {};
+  $scope.bulk            = { tag: '', folder: '' };
+  $scope.lastSelectedIdx = null; // anchor for shift-click range selection
+
+  $scope.isSelected = function(file) { return !!$scope.selectedIds[file.id]; };
+
+  $scope.toggleSelect = function(file, $event) {
+    if ($event) $event.stopPropagation();
+    if ($scope.selectedIds[file.id]) delete $scope.selectedIds[file.id];
+    else $scope.selectedIds[file.id] = true;
+    $scope.lastSelectedIdx = $scope.visibleFiles.indexOf(file);
+  };
+
+  $scope.selectionCount = function() { return Object.keys($scope.selectedIds).length; };
+
+  $scope.clearSelection = function() { $scope.selectedIds = {}; $scope.lastSelectedIdx = null; };
+
+  // Card click dispatcher: plain click opens the preview (existing
+  // behavior); Ctrl/Cmd-click toggles just that file like a native file
+  // manager; Shift-click selects the contiguous range from the last
+  // clicked/checked card to this one.
+  $scope.onCardClick = function(file, $event) {
+    var idx = $scope.visibleFiles.indexOf(file);
+    if ($event.shiftKey && $scope.lastSelectedIdx !== null) {
+      var start = Math.min($scope.lastSelectedIdx, idx);
+      var end   = Math.max($scope.lastSelectedIdx, idx);
+      for (var i = start; i <= end; i++) $scope.selectedIds[$scope.visibleFiles[i].id] = true;
+      $scope.lastSelectedIdx = idx;
+      return;
+    }
+    if ($event.ctrlKey || $event.metaKey) {
+      $scope.toggleSelect(file);
+      return;
+    }
+    $scope.openPreview(file);
+    $scope.lastSelectedIdx = idx;
+  };
+
+  $scope.bulkTagKeydown = function($event) {
+    if ($event.which === 13) { $event.preventDefault(); $scope.applyBulkTag(); }
+  };
+
+  $scope.applyBulkTag = function() {
+    var tag = ($scope.bulk.tag || '').trim().toLowerCase();
+    var ids = Object.keys($scope.selectedIds);
+    if (!tag || !ids.length) return;
+    $http.patch('/api/bulk/update', { ids: ids, addTag: tag }).then(function() {
+      $scope.files.forEach(function(f) {
+        if ($scope.selectedIds[f.id] && (f.tags || []).indexOf(tag) === -1)
+          f.tags = (f.tags || []).concat([tag]);
+      });
+      $scope.bulk.tag = '';
+      $scope.refreshTags();
+      $scope.recomputeVisibleFiles();
+      $scope.showToast('Tagged ' + ids.length + ' file' + (ids.length > 1 ? 's' : ''), 'success');
+    }, function() { $scope.showToast('Bulk tag failed', 'error'); });
+  };
+
+  $scope.applyBulkFolder = function() {
+    var ids = Object.keys($scope.selectedIds);
+    if (!ids.length) return;
+    var folder = $scope.bulk.folder || null;
+    $http.patch('/api/bulk/update', { ids: ids, folder: folder }).then(function() {
+      $scope.files.forEach(function(f) { if ($scope.selectedIds[f.id]) f.folder = folder; });
+      $scope.loadFolders();
+      $scope.recomputeVisibleFiles();
+      $scope.showToast('Moved ' + ids.length + ' file' + (ids.length > 1 ? 's' : ''), 'info');
+    }, function() { $scope.showToast('Bulk move failed', 'error'); });
+  };
+
+  $scope.bulkDownload = function() {
+    var ids = Object.keys($scope.selectedIds);
+    if (!ids.length) return;
+    var a = document.createElement('a');
+    a.href = '/api/bulk/download?ids=' + ids.join(',');
+    a.download = 'files.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+
+  $scope.bulkDelete = function() {
+    var ids = Object.keys($scope.selectedIds);
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' file' + (ids.length > 1 ? 's' : '') + '? This cannot be undone.')) return;
+    $http.post('/api/bulk/delete', { ids: ids }).then(function() {
+      $scope.files = $scope.files.filter(function(f) { return !$scope.selectedIds[f.id]; });
+      $scope.clearSelection();
+      $scope.refreshTags(); $scope.loadFolders(); $scope.loadServerInfo(); $scope.recomputeVisibleFiles();
+      $scope.showToast(ids.length + ' file' + (ids.length > 1 ? 's' : '') + ' deleted', 'info');
+    }, function() { $scope.showToast('Bulk delete failed', 'error'); });
+  };
 
   // ── Theme (accent color) ─────────────────────────────────────────────────
   $scope.accentPresets = [
@@ -79,10 +201,33 @@ function($scope, $http, $sce, $timeout) {
     $scope.theme.open = !$scope.theme.open;
   };
 
+  // ── Storage dashboard ────────────────────────────────────────────────────
+  $scope.storageOpen = false;
+  $scope.storageInfo = null;
+
+  var CATEGORY_COLORS = { image: '#db2777', video: '#dc2626', audio: '#059669', pdf: '#ea580c', text: '#7c3aed', other: '#71717a' };
+  $scope.categoryColor = function(cat) { return CATEGORY_COLORS[cat] || '#71717a'; };
+
+  $scope.openStorageModal = function() {
+    $scope.storageOpen = true;
+    $http.get('/api/storage').then(function(r) { $scope.storageInfo = r.data; });
+  };
+  $scope.closeStorageModal = function() { $scope.storageOpen = false; };
+
+  $scope.storageUsedPct = function() {
+    if (!$scope.storageInfo || !$scope.storageInfo.disk || !$scope.storageInfo.disk.total) return 0;
+    return Math.min(100, Math.round(($scope.storageInfo.disk.used / $scope.storageInfo.disk.total) * 100));
+  };
+  $scope.storagePct = function(size) {
+    if (!$scope.storageInfo || !$scope.storageInfo.totalSize) return 0;
+    return Math.round((size / $scope.storageInfo.totalSize) * 100);
+  };
+
   $scope.allTags     = [];
   $scope.activeTags  = [];
   $scope.searchQuery = '';
   $scope.visibleFiles = [];
+  $scope.breadcrumb   = [];
 
   // Wrapping transient inputs in an object prevents ng-if child-scope shadowing.
   // Without the dot, ng-model inside ng-if writes to the child scope and the
@@ -96,6 +241,38 @@ function($scope, $http, $sce, $timeout) {
   $scope.previewType        = null;
   $scope.previewTextContent = '';
   $scope.trustedPreviewUrl  = '';
+
+  // ── Rename ────────────────────────────────────────────────────────────────
+  // Wrapped in an object (like ui/theme/bulk above) — the rename input lives
+  // inside ng-if="rename.active", and a bare ng-model there would shadow the
+  // real value on a child scope instead of updating this one.
+  $scope.rename = { active: false, value: '' };
+
+  $scope.startRename = function(file, $event) {
+    if ($event) $event.stopPropagation();
+    $scope.rename.active = true;
+    $scope.rename.value  = file.name;
+    $timeout(function() { var el = document.getElementById('rename-input'); if (el) { el.focus(); el.select(); } }, 40);
+  };
+
+  $scope.cancelRename = function() { $scope.rename.active = false; $scope.rename.value = ''; };
+
+  $scope.saveRename = function(file) {
+    var name = ($scope.rename.value || '').trim();
+    if (!name || name === file.name) { $scope.cancelRename(); return; }
+    $http.patch('/api/files/' + file.id, { name: name }).then(function() {
+      file.name = name;
+      $scope.recomputeVisibleFiles();
+      $scope.cancelRename();
+    }, function(err) {
+      $scope.showToast((err.data && err.data.error) || 'Rename failed', 'error');
+    });
+  };
+
+  $scope.renameKeydown = function($event, file) {
+    if ($event.which === 13) { $event.preventDefault(); $scope.saveRename(file); }
+    if ($event.which === 27) { $event.stopPropagation(); $scope.cancelRename(); }
+  };
 
   $scope.chatOpen    = false;
   $scope.chatMsgs    = [];
@@ -174,15 +351,23 @@ function($scope, $http, $sce, $timeout) {
   };
 
   // ── Folders ───────────────────────────────────────────────────────────────
+  $scope.folderRows = [];
+
   $scope.loadFolders = function() {
     $http.get('/api/folders').then(function(r) {
-      $scope.folders = r.data;
-      if ($scope.currentFolder && $scope.folders.indexOf($scope.currentFolder) === -1) {
+      $scope.folders    = r.data;
+      $scope.folderRows = buildFolderRows(r.data);
+      var stillExists = $scope.folderRows.some(function(row) { return row.path === $scope.currentFolder; });
+      if ($scope.currentFolder && !stillExists) {
         $scope.currentFolder = null;
         $scope.recomputeVisibleFiles();
       }
     });
   };
+
+  // Indent text prefix for folder <option> elements, which can't be styled
+  // with real CSS padding cross-browser.
+  $scope.folderIndent = function(depth) { return depth > 0 ? new Array(depth + 1).join(' ') : ''; };
 
   $scope.navigateFolder = function(folder) { $scope.currentFolder = folder; $scope.activeTags = []; $scope.recomputeVisibleFiles(); };
 
@@ -191,9 +376,12 @@ function($scope, $http, $sce, $timeout) {
   $scope.createFolder = function() {
     var name = ($scope.newFolderName || '').trim();
     if (!name) return;
-    $http.post('/api/folders', { name: name }).then(function() {
+    if (name.indexOf('/') !== -1) { $scope.showToast('Folder name can\'t contain "/"', 'error'); return; }
+    // Creating a folder while inside another one nests it there automatically.
+    var fullPath = $scope.currentFolder ? $scope.currentFolder + '/' + name : name;
+    $http.post('/api/folders', { name: fullPath }).then(function() {
       $scope.loadFolders();
-      $scope.currentFolder   = name;
+      $scope.currentFolder   = fullPath;
       $scope.newFolderName   = '';
       $scope.showFolderInput = false;
       $scope.recomputeVisibleFiles();
@@ -203,6 +391,22 @@ function($scope, $http, $sce, $timeout) {
   $scope.folderKeydown = function(e) {
     if (e.which === 13) $scope.createFolder();
     if (e.which === 27) { $scope.showFolderInput = false; $scope.newFolderName = ''; }
+  };
+
+  $scope.deleteFolder = function(path, $event) {
+    if ($event) $event.stopPropagation();
+    if (!confirm('Delete folder "' + path + '"? Files inside (and in any subfolders) move to All Files — they are not deleted.')) return;
+    $http.delete('/api/folders/' + encodeURIComponent(path)).then(function() {
+      var prefix = path + '/';
+      if ($scope.currentFolder === path || ($scope.currentFolder && $scope.currentFolder.indexOf(prefix) === 0))
+        $scope.currentFolder = null;
+      $scope.files.forEach(function(f) {
+        if (f.folder === path || (f.folder && f.folder.indexOf(prefix) === 0)) f.folder = null;
+      });
+      $scope.loadFolders();
+      $scope.recomputeVisibleFiles();
+      $scope.showToast('Folder deleted', 'info');
+    }, function() { $scope.showToast('Could not delete folder', 'error'); });
   };
 
   $scope.moveFileToFolder = function(file) {
@@ -222,6 +426,7 @@ function($scope, $http, $sce, $timeout) {
     $scope.loading = true;
     $http.get('/api/files').then(function(r) {
       $scope.files = r.data; $scope.loading = false; $scope.refreshTags();
+      $scope.clearSelection();
       $scope.recomputeVisibleFiles();
     }, function() {
       $scope.loading = false;
@@ -260,6 +465,19 @@ function($scope, $http, $sce, $timeout) {
       default:          r.sort(function(a,b){ return new Date(b.uploadedAt) - new Date(a.uploadedAt); });
     }
     $scope.visibleFiles = r;
+
+    // Breadcrumb segments also depend only on currentFolder — computed here
+    // (rather than as a function called from ng-repeat) because a function
+    // that returns a fresh array every digest, with no track-by, makes
+    // ng-repeat treat every item as new on every cycle. That churn can
+    // itself trigger another digest, which computes yet another new array,
+    // and so on until Angular gives up after 10 iterations with a
+    // $rootScope:infdig error — this actually happened during testing.
+    var acc = '';
+    $scope.breadcrumb = $scope.currentFolder ? $scope.currentFolder.split('/').map(function(part) {
+      acc = acc ? acc + '/' + part : part;
+      return { name: part, path: acc };
+    }) : [];
   };
 
   $scope.uploadFiles = function(fileList) {
@@ -299,6 +517,38 @@ function($scope, $http, $sce, $timeout) {
 
   $scope.triggerFileInput = function() { document.getElementById('fileInput').click(); };
 
+  // ── Upload from URL ──────────────────────────────────────────────────────
+  // Wrapped in an object — the url/loading fields are edited from inside
+  // ng-if="urlUpload.open", so bare scalars would shadow (same reasoning as
+  // rename/ui/theme/bulk above).
+  $scope.urlUpload = { open: false, url: '', loading: false };
+
+  $scope.toggleUrlInput = function($event) {
+    if ($event) $event.stopPropagation();
+    $scope.urlUpload.open = !$scope.urlUpload.open;
+  };
+
+  $scope.urlUploadKeydown = function($event) {
+    if ($event.which === 13) { $event.preventDefault(); $scope.uploadFromUrl(); }
+  };
+
+  $scope.uploadFromUrl = function() {
+    var url = ($scope.urlUpload.url || '').trim();
+    if (!url || $scope.urlUpload.loading) return;
+    $scope.urlUpload.loading = true;
+    $http.post('/api/upload-url', { url: url, folder: $scope.currentFolder }).then(function(r) {
+      $scope.urlUpload.loading = false;
+      r.data.files.forEach(function(f) { $scope.files.unshift(f); });
+      $scope.refreshTags(); $scope.loadServerInfo(); $scope.recomputeVisibleFiles();
+      $scope.urlUpload.url  = '';
+      $scope.urlUpload.open = false;
+      $scope.showToast('Fetched from URL', 'success');
+    }, function(err) {
+      $scope.urlUpload.loading = false;
+      $scope.showToast((err.data && err.data.error) || 'Fetch failed', 'error');
+    });
+  };
+
   $scope.downloadFile = function(file) {
     var a = document.createElement('a');
     a.href = '/api/files/' + file.id + '/download'; a.download = file.name;
@@ -309,6 +559,7 @@ function($scope, $http, $sce, $timeout) {
     if (!confirm('Delete "' + file.name + '"? This cannot be undone.')) return;
     $http.delete('/api/files/' + file.id).then(function() {
       $scope.files.splice($scope.files.indexOf(file), 1);
+      delete $scope.selectedIds[file.id];
       $scope.refreshTags(); $scope.loadFolders(); $scope.loadServerInfo(); $scope.recomputeVisibleFiles();
       $scope.showToast('"' + file.name + '" deleted', 'info');
     }, function() { $scope.showToast('Delete failed', 'error'); });
@@ -319,6 +570,7 @@ function($scope, $http, $sce, $timeout) {
     $scope.previewFile       = file;
     $scope.previewTextContent = '';
     $scope.ui.newTag         = '';
+    $scope.cancelRename();
     var url = '/api/files/' + file.id + '/preview';
     $scope.trustedPreviewUrl = $sce.trustAsResourceUrl(url);
     $scope.previewType       = $scope.getFileCategory(file);
@@ -335,6 +587,7 @@ function($scope, $http, $sce, $timeout) {
     if (media) { try { media.pause(); } catch(e) {} }
     $scope.previewFile = null; $scope.previewType = null;
     $scope.previewTextContent = ''; $scope.ui.newTag = '';
+    $scope.cancelRename();
   };
 
   // ── File type helpers ─────────────────────────────────────────────────────
@@ -420,6 +673,24 @@ function($scope, $http, $sce, $timeout) {
   // progress handler).
   angular.element(document).on('click', function() {
     if ($scope.theme.open) $scope.$applyAsync(function() { $scope.theme.open = false; });
+  });
+
+  // Paste an image/file straight from the clipboard (e.g. a screenshot).
+  // Only clipboard items of kind "file" reach here — pasting text into the
+  // search box or a tag input never has file-kind items, so this can't
+  // accidentally hijack a normal text paste.
+  angular.element(document).on('paste', function(e) {
+    var clipboardData = e.originalEvent ? e.originalEvent.clipboardData : e.clipboardData;
+    var items = clipboardData && clipboardData.items;
+    if (!items) return;
+    var files = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        var f = items[i].getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) $scope.$applyAsync(function() { $scope.uploadFiles(files); });
   });
 
   // ── Init ──────────────────────────────────────────────────────────────────

@@ -4,14 +4,20 @@
   "description": "Personal cloud storage — files live on this machine, accessible from any browser on your network",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "prestart": "npm run build:css",
+    "build:css": "cleancss -o public/style.min.css public/style.css"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.55.0",
+    "archiver": "^7.0.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
     "multer": "^2.1.1",
     "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "clean-css-cli": "^5.6.3"
   }
 }

@@ -334,6 +334,18 @@ body {
 }
 .folder-item.active .folder-count { background: rgba(var(--accent-rgb),.2); color: var(--accent-light); }
 
+.folder-delete-btn {
+  flex-shrink: 0;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition), background var(--transition);
+}
+.folder-item:hover .folder-delete-btn { opacity: 1; }
+.folder-delete-btn:hover { color: var(--danger); background: var(--bg-input); }
+
 .sidebar-empty {
   font-size: 12px;
   color: var(--text-muted);
@@ -382,11 +394,76 @@ body {
 .upload-sub                 { font-size: 13px; color: var(--text-secondary); }
 .upload-sub strong          { color: var(--accent-light); }
 
+.url-upload-toggle {
+  display: block;
+  margin: 10px auto 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.url-upload-toggle:hover { color: var(--text-secondary); }
+
+.url-upload-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  cursor: default;
+}
+.url-upload-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 13px;
+  outline: none;
+  width: 280px;
+  transition: border-color var(--transition);
+}
+.url-upload-input::placeholder { color: var(--text-muted); }
+.url-upload-input:focus { border-color: var(--accent); }
+
 /* ── Upload progress ─────────────────────────────────────────────────────── */
 .progress-wrap  { display: flex; align-items: center; gap: 13px; margin-bottom: 20px; }
 .progress-track { flex: 1; height: 5px; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
 .progress-bar   { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-light)); border-radius: 3px; transition: width .2s ease; min-width: 4px; }
 .progress-label { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+
+/* ── Bulk selection bar ──────────────────────────────────────────────────── */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-rgb),.3);
+  border-radius: var(--radius);
+}
+.bulk-count { font-size: 13px; font-weight: 600; color: var(--accent-light); white-space: nowrap; }
+.bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.bulk-tag-input, .bulk-folder-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 5px 10px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.bulk-tag-input::placeholder { color: var(--text-muted); }
+.bulk-tag-input:focus, .bulk-folder-select:focus { border-color: var(--accent); }
+.bulk-tag-input { width: 140px; }
+.bulk-folder-select { cursor: pointer; }
+
+.bulk-clear { margin-left: auto; }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
 .toolbar {
@@ -466,6 +543,29 @@ body {
   position: relative;
 }
 .file-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--accent); }
+.file-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+
+/* Selection checkbox — hidden until hovered, or always shown once anything
+   in the grid is selected so continuing to multi-select doesn't require
+   re-hovering each card. */
+.card-select-wrap {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.file-card:hover .card-select-wrap,
+.files-grid.selection-active .card-select-wrap { opacity: 1; }
+.card-select { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 
 .card-thumb {
   height: 100px;
@@ -606,6 +706,22 @@ body {
 .modal-title          { font-weight: 600; font-size: 15px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .modal-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
+.modal-title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+.rename-btn       { font-size: 12px; opacity: .6; transition: opacity var(--transition); }
+.rename-btn:hover { opacity: 1; }
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px 8px;
+  outline: none;
+}
+
 .modal-body { flex: 1; overflow: auto; min-height: 0; }
 
 /* ── Modal details strip (tags + folder) ─────────────────────────────────── */
@@ -678,6 +794,43 @@ body {
   flex-shrink: 0;
 }
 .modal-meta { font-size: 12px; color: var(--text-muted); }
+
+/* ── Storage dashboard modal ─────────────────────────────────────────────── */
+.storage-modal { max-width: 480px; }
+.storage-body  { padding: 20px; display: flex; flex-direction: column; gap: 22px; }
+
+.storage-summary       { display: flex; flex-direction: column; gap: 8px; }
+.storage-gauge-track   { height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+.storage-gauge-fill    { height: 100%; background: var(--accent); border-radius: 4px; transition: width .3s ease; }
+.storage-summary-text  { font-size: 13px; color: var(--text-secondary); }
+
+.storage-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.storage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.storage-row-label {
+  width: 90px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.storage-row-bar-track { flex: 1; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden; }
+.storage-row-bar-fill  { height: 100%; background: var(--accent); border-radius: 3px; }
+.storage-row-size      { width: 60px; text-align: right; flex-shrink: 0; color: var(--text-muted); }
 
 /* ── Preview containers ───────────────────────────────────────────────────── */
 .preview-frame        { display: flex; align-items: center; justify-content: center; min-height: 280px; max-height: 60vh; overflow: auto; background: #0a0a0c; }

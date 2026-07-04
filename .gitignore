@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Generated — regenerated automatically by `npm start` (see prestart script)
+public/style.min.css
+
 # Runtime data — these are created automatically on first run
 uploads/
 metadata.json
